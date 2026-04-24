@@ -1,50 +1,64 @@
 // client/src/api/axios.js
-// Shared Axios instance with JWT injection and 401 auto-logout
+// Shared Axios instance with JWT injection + 401 auto-logout (enhanced)
 
-import axios from 'axios';
+import axios from "axios";
 
-const STORAGE_KEY = 'tm_user';
+const STORAGE_KEY = "tm_user";
 
-const api = axios.create({
-  // In dev, Vite proxies /api → http://localhost:5000
-  // In production, set VITE_API_URL to your deployed backend URL
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+const API = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "/api",
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 10000, // 10s timeout
 });
 
-// ─── Request Interceptor: attach Bearer token on every request ────────────────
-api.interceptors.request.use(
+// ─── Request Interceptor: attach Bearer token ────────────────────────────────
+API.interceptors.request.use(
   (config) => {
     try {
+      // Support BOTH storage formats (robust)
       const stored = localStorage.getItem(STORAGE_KEY);
+      const directToken = localStorage.getItem("token");
+
+      let token = null;
+
       if (stored) {
-        const { token } = JSON.parse(stored);
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
-        }
+        const parsed = JSON.parse(stored);
+        token = parsed?.token;
       }
-    } catch {
-      // Ignore parse errors
+
+      if (!token && directToken) {
+        token = directToken;
+      }
+
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (err) {
+      console.warn("Token parse error:", err);
     }
+
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// ─── Response Interceptor: auto-logout on 401 ─────────────────────────────────
-api.interceptors.response.use(
+// ─── Response Interceptor: auto logout on 401 ────────────────────────────────
+API.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid — clear session and redirect to login
+      // Clear all possible auth storage
       localStorage.removeItem(STORAGE_KEY);
-      window.location.href = '/login';
+      localStorage.removeItem("token");
+
+      // Redirect to login
+      window.location.href = "/login";
     }
+
     return Promise.reject(error);
   }
 );
 
-export default api;
+export default API;
